@@ -41,6 +41,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private var currentSongIndex by mutableStateOf(0)
     private var lastTiltTime = 0L
 
+    var isPlaying by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -58,6 +60,33 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     exoPlayer = exoPlayer
                 )
             }
+
+            MusicScreen(
+                song = songs[currentSongIndex],
+                exoPlayer = exoPlayer,
+                isPlaying = isPlaying,
+                onPlayPause = {
+                    if (exoPlayer.isPlaying) {
+                        exoPlayer.pause()
+                        isPlaying = false
+                    } else {
+                        exoPlayer.play()
+                        isPlaying = true
+                    }
+                },
+                onNext = {
+                    currentSongIndex = (currentSongIndex + 1) % songs.size
+                    playSong(songs[currentSongIndex])
+                    isPlaying = true
+                },
+                onPrevious = {
+                    currentSongIndex =
+                        if (currentSongIndex == 0) songs.size - 1 else currentSongIndex - 1
+                    playSong(songs[currentSongIndex])
+                    isPlaying = true
+                }
+            )
+
         }
     }
 
