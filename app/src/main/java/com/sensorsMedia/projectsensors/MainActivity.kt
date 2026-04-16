@@ -1,65 +1,110 @@
 package com.sensorsMedia.projectsensors
 
+import android.content.Context
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.media.MediaPlayer
 import android.os.Bundle
-import android.widget.Button
-import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.core.net.toUri
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import com.sensorsMedia.projectsensors.ui.theme.MusicScreen
 
+
+data class Song(
+    val title: String,
+    val artist: String,
+    val coverRes: Int,
+    val audioRes: Int
+)
+
+@Suppress("OPT_IN_ARGUMENT_IS_NOT_MARKER")
 class MainActivity : ComponentActivity(), SensorEventListener {
-    private lateinit var mediaPlayer: MediaPlayer
+
+    private lateinit var exoPlayer: ExoPlayer
     private lateinit var sensorManager: SensorManager
     private var proximitySensor: Sensor? = null
     private var accelerometer: Sensor? = null
 
-    private var currentSongIndex = 0
     private val songs = listOf(
-        R.raw.musica1,
-        R.raw.musica2
+        Song("Horizonte", "Luz do Norte", R.drawable.capa1, R.raw.musica1),
+        Song("Caminho", "Aurora Boreal", R.drawable.capa2, R.raw.musica2)
     )
 
-
-
+    private var currentSongIndex by mutableStateOf(0)
+    private var lastTiltTime = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
 
-        mediaPlayer = MediaPlayer.create(this, R.raw.musica1)
+        exoPlayer = ExoPlayer.Builder(this).build()
+        playSong(songs[currentSongIndex])
 
-        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         proximitySensor = sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY)
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
-        val startButton = findViewById<Button>(R.id.startButton)
-        val statusText = findViewById<TextView>(R.id.statusText)
-
-        startButton.setOnClickListener {
-            mediaPlayer.start()
-            statusText.text = getString(R.string.textMusic)
+        setContent {
+            MaterialTheme {
+                MusicScreen(
+                    song = songs[currentSongIndex],
+                    exoPlayer = exoPlayer
+                )
+            }
         }
     }
 
+    private fun playSong(song: Song) {
+        val uri = "android.resource://${packageName}/${song.audioRes}".toUri()
+        val mediaItem = MediaItem.fromUri(uri)
+        exoPlayer.setMediaItem(mediaItem)
+        exoPlayer.prepare()
+        exoPlayer.play()
+    }
+
+    override fun onSensorChanged(event: SensorEvent?) {
+        if (event == null) return
+
+        when (event.sensor.type) {
+
+            Sensor.TYPE_PROXIMITY -> {
+                if (event.values[0] == 0f) exoPlayer.pause()
+                else exoPlayer.play()
+            }
+
+            Sensor.TYPE_ACCELEROMETER -> {
+                val x = event.values[0]
+                val now = System.currentTimeMillis()
+
+                if (now - lastTiltTime < 1000) return
+
+                if (x > 5) {
+                    currentSongIndex = (currentSongIndex + 1) % songs.size
+                    playSong(songs[currentSongIndex])
+                    lastTiltTime = now
+                } else if (x < -5) {
+                    currentSongIndex =
+                        if (currentSongIndex == 0) songs.size - 1 else currentSongIndex - 1
+                    playSong(songs[currentSongIndex])
+                    lastTiltTime = now
+                }
+            }
+        }
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
     override fun onResume() {
         super.onResume()
-        proximitySensor?.also {
-            sensorManager.registerListener(
-                this,
-                it,
-                SensorManager.SENSOR_DELAY_NORMAL
-            )
-        }
-        accelerometer?.also {
-            sensorManager.registerListener(
-                this,
-                it,
-                SensorManager.SENSOR_DELAY_NORMAL
-            )
-        }
+        proximitySensor?.also { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        accelerometer?.also { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
     }
 
     override fun onPause() {
@@ -67,69 +112,9 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         sensorManager.unregisterListener(this)
     }
 
-
     override fun onDestroy() {
         super.onDestroy()
-        mediaPlayer.release()
+        exoPlayer.release()
     }
-
-    override fun onSensorChanged(event: SensorEvent?) {
-        if (event?.sensor?.type == Sensor.TYPE_PROXIMITY) {
-
-            val distance = event.values[0]
-
-            if (distance == 0f) {
-                // Objeto perto → PAUSAR
-                if (mediaPlayer.isPlaying) {
-                    mediaPlayer.pause()
-                }
-            } else {
-                // Objeto longe → RETOMAR
-                if (!mediaPlayer.isPlaying) {
-                    mediaPlayer.start()
-                }
-            }
-        }
-
-        if (event?.sensor?.type == Sensor.TYPE_ACCELEROMETER) {
-
-            val x = event.values[0]
-
-            // Inclinação para a direita → próxima música
-            if (x > 5) {
-                nextSong()
-            }
-
-            // Inclinação para a esquerda → música anterior
-            if (x < -5) {
-                previousSong()
-            }
-        }
-    }
-
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-
-    private fun nextSong() {
-        currentSongIndex = (currentSongIndex + 1) % songs.size
-        changeSong()
-    }
-
-    private fun previousSong() {
-        currentSongIndex = if (currentSongIndex - 1 < 0) {
-            songs.size - 1
-        } else {
-            currentSongIndex - 1
-        }
-        changeSong()
-    }
-
-    private fun changeSong() {
-        mediaPlayer.reset()
-        mediaPlayer = MediaPlayer.create(this, songs[currentSongIndex])
-        mediaPlayer.start()
-    }
-
-
 }
-
 
